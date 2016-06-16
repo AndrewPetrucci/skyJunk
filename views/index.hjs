@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+	<head>
+    	<title>{{ title }}</title>
+	    <link rel='stylesheet' href='/stylesheets/style.css' />
+	</head>
+	<body>
+		<nav id="nav01"></nav>
+		<div id="main">
+    		<h1 style="text-align:center">{{ title }}</h1>
+    		<p style="text-align:center">Created by {{author}} on {{dateCreated}}</p>
+			<div style="text-align:center">
+	    		<div style="display:inline-block;line-height:1;text-align:left;padding-right:100px">
+	    		 	<h2 style="text-align:center">Weather Search</h2>
+		    		<form action="" style="display:inline-block;line-height:1;text-align:left">
+		    		 	<div>
+							Enter an Address for a Forecast: <input type="text" id="addressQueryText">	    		 	
+						</div>
+		    		 	<p></p>
+						<div>
+							Enter a Date for Historical Weather (yyyy-mm-dd: <input type="text" id="dateQueryText">
+						</div>	
+						<p></p>
+						Chart Type: <select id="chartType" style="display:inline-block;line-height:1;text-align:left">
+							<option value="temperature">Temperature(°F)</option>
+							<option value="humidity">Humidity</option>
+							<option value="precipProbability">Precipitation Probability</option>
+						</select>
+						<form action="" style="display:inline-block;line-height:1;padding-left:20px">
+							<button type="button" onclick="search()">Show Result</button>
+						</form>			
+					</form >
+	    		</div>
+	    		<div style="display:inline-block;line-height:1">
+	    			<h3 id="ps"></h3>
+	    			<div id="pSearches" style="display:inline-block;line-height:1;text-align:left"></div>
+	    		</div>
+			</div>
+			<P></P>
+			<div>
+				<h2 id="location" style="text-align:center"></h2>
+				<div style="text-align:center">
+					<h3 id="current" style="text-align:center"></h3>
+					<div style="text-align:center">
+						<div style="display:inline-block;line-height:1;text-align:left;padding-right:50px">
+							<div id="datetime"></div>
+							<div id="condition"></div>
+							<div id="temperature"></div>
+						</div>
+						<div style="display:inline-block;line-height:1;text-align:left">
+							<div id="precipitation"></div>
+							<div id="humidity"></div>
+							<div id="wind"></div>
+						</div>
+					</div>
+				</div>	
+			</div>
+			<p></p>
+			<div id="daily" style="text-align:center"></div>
+			<p></p>
+			<div id="hourly"></div>
+			<p></p>
+		 	<footer id="foot01"></footer>
+		</div>
+		<script src="javascripts/mapTools.js"></script>
+		<script>
+			//onload for window shows search history
+			window.onload = function() {
+		        if (!localStorage.getItem("historySize")) {
+		            localStorage.setItem("historySize", "0");
+		        } else {
+		        	showHistory();
+		        }
+			};
+
+			//Takes the data from the "addressQueryText" element, 
+			//Sets the "location" element
+			function search() {
+				var query = document.getElementById("addressQueryText").value.toString();
+				clearResults();
+				if (query == ""){
+					document.getElementById("location").innerHTML = "Please Enter A Query";
+				}else{
+					var temp = localStorage.getItem("historySize");
+					localStorage.setItem("historySize", Number(temp)+1);
+					localStorage.setItem("history" + temp%{{maxStoriedQueries}}, query);
+					showHistory();
+					addressQuery(query);
+				}
+			}
+			function addressQuery(query){
+			    var googleQueryRequest = new XMLHttpRequest();
+			    googleQueryRequest.open("GET", "https://maps.googleapis.com/maps/api/geocode/json?address=" + query.split(" ").join("+") + "&key={{apiKeyGoogle}}", true);
+			    googleQueryRequest.send();
+			    googleQueryRequest.onreadystatechange=function() {
+			        if (googleQueryRequest.readyState == 4 && googleQueryRequest.status == 200) {
+			        	var formattedAddress = getFormattedAddress(googleQueryRequest.responseText);
+			        	if (formattedAddress!=null){
+				        	setElementInnerHtmlById("location", "Location: " + formattedAddress);
+				            var geometry = getGeometry(googleQueryRequest.responseText);
+							getForecast(geometry.lat, geometry.lng);
+						}
+			        }
+			    }
+			}
+
+			//takes lat as a string or number and lng as a string or number
+			function getForecast(lat, lng){
+				var ForecastRequest = new XMLHttpRequest();
+				var url = "http://cors.io/?u=https://api.forecast.io/forecast/{{apiKeyForecast}}/" + lat + "," + lng;
+				var date = document.getElementById("dateQueryText").text;
+				if(date != undefined) {
+					url += "," + date + "T00:00:00";
+				}
+				ForecastRequest.open("GET", url , true);
+				ForecastRequest.send();
+				ForecastRequest.onreadystatechange = function() {
+				    if (ForecastRequest.readyState == 4 && ForecastRequest.status == 200) {
+				    	var response = JSON.parse(ForecastRequest.responseText);
+				    	var cur = response.currently;
+				    	setElementInnerHtmlById("datetime", getDate(cur));
+				    	setElementInnerHtmlById("condition", cur.summary);
+				    	setElementInnerHtmlById("temperature", cur.temperature + "°F");
+				    	setElementInnerHtmlById("precipitation", "Precipitation: " + cur.precipProbability * 100 + "%");
+				    	setElementInnerHtmlById("humidity", "Humidity " + cur.humidity * 100 + "%");
+				    	setElementInnerHtmlById("wind", "Wind: " + cur.windSpeed + " mph");
+				    	var el =document.getElementById("chartType");
+				    	drawChart(response.hourly.data, el.value, el.options[el.selectedIndex].text);
+				    	if (date==""){
+				    		setElementInnerHtmlById("current", "Current Weather");
+					    	setElementInnerHtmlById("daily", makeForecast(response.daily.data));
+					    }
+				    }
+				}
+			}
+
+			//displays the search history
+			function showHistory(){
+				setElementInnerHtmlById("ps", "Previous Searches");
+				var str = "";
+				for(var i = 0; i < {{maxStoriedQueries}}; i++){
+					var temp = localStorage.getItem("history" + i);
+					if(!temp){
+						break;
+					}
+					str+= "<div id=\"pSearch" + i + "\">" + temp + "</div>";
+				}
+				setElementInnerHtmlById("pSearches", str);
+			}
+
+			//Clears results content on the page
+			function clearResults(){
+				setElementInnerHtmlById("datetime", "");
+				setElementInnerHtmlById("condition", "");
+				setElementInnerHtmlById("temperature", "");
+				setElementInnerHtmlById("precipitation", "");
+				setElementInnerHtmlById("humidity", "");
+				setElementInnerHtmlById("wind", "");
+				setElementInnerHtmlById("current", "");
+				setElementInnerHtmlById("daily", "");
+				setElementInnerHtmlById("hourly", "");
+			}
+
+			//Takes id as a string and html as a string.
+			//Stets the inner html of an element identified by id
+			function setElementInnerHtmlById(id, html) {
+			    document.getElementById(id).innerHTML = html;
+			}
+
+		</script>
+		<script src="http://canvasjs.com/assets/script/canvasjs.min.js"></script>
+		<script type="text/javascript">
+
+		//Takes data as an array that represents the hourly payload of the forcast api, type as a string, and axisY as a string
+		//Draws the chart using CanvasJs
+		function drawChart (data, type, axisY) {
+			var stuff={
+				title:{
+					text: axisY + " at Hour of Day"              
+				},
+				axisY:{
+					title: axisY  
+				},
+				axisX:{
+					title: "Hour of Day"   
+				},
+				data: [              
+					{
+						type: "line",
+						dataPoints: []
+					}
+				]
+			};
+			var j = 0;
+			for(var i in data){
+				if (j++ > 24) {
+					break;
+				}
+				var el = data[i];
+				stuff.data[0].dataPoints[i] = { label: getTime(el), y: el[type]}
+			}
+			var chart = new CanvasJS.Chart("hourly", stuff);
+			chart.render();
+		}
+
+		//Takes an element of the forcast data array
+		//Returns the time of day
+		function getTime(forecastPayload){
+		    var date = new Date(forecastPayload.time*1000);
+		    return date.toTimeString().split(":")[0];
+		}
+
+		</script>
+	</body>
+</html>
